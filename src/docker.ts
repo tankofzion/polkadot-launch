@@ -53,8 +53,7 @@ export async function startContainer(): Promise<SpawnedProcess> {
 
 export async function isExistingContainer(containerName: string): Promise<ContainerInfo> {
 
-    let containerInfo = {id:             let containerInfo = {};
-    ""};
+    let containerInfo = {}};
 
     DockerClient.listContainers({ all: true })
         .then( (containers) => {

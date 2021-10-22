@@ -1,58 +1,31 @@
-# polkadot-launch
+# Centrifuge-launch
 
-Simple CLI tool to launch a local [Polkadot](https://github.com/paritytech/polkadot/) test network.
+Simple CLI tool to launch a local [Centrifuge](https://github.com/centrifuge/centrifuge-chain) test network, that includes a relay chain and the latest Altair development parachain. 
 
-## Install
+## Usage
 
-```
-yarn global add polkadot-launch
-```
-
-Or, if you use `npm`:
+For now (as this is still a work in progress), in order to install and run this tool, you should enter the following commands:
 
 ```bash
-npm i polkadot-launch -g
+$ cd [YOUR_WORKING_DIRECTORY]
+$ git clone git@github.com:tankofzion/polkadot-launch.git
+$ cd polkadot-launch
+$ yarn install
+$ yarn start [your_config_file.json]
 ```
-
-## Binary Files
-
-To use polkadot-launch, you need to have binary files for a `polkadot` relay chain and a
-`polkadot-collator`.
-
-You can generate these files by cloning the `rococo-v1` branch of these projects and building them
-with the specific flags below:
-
-```bash
-git clone https://github.com/paritytech/polkadot
-cd polkadot
-cargo build --release
-```
-
-and
-
-```
-git clone https://github.com/paritytech/cumulus
-cd cumulus
-cargo build --release -p polkadot-collator
-```
-
-## Use
-
-```bash
-polkadot-launch config.json
-```
-
 ### Configuration File
 
-The required configuration file defines the properties of the network you want to set up.
+A Json configuration file is used to parameterize the local settings you want to set up, including the Polkadot relaychain configuration and one or more Centrifuge (Altair, for now) development parachains.
 
-You can see an example [here](config.json).
+You can see an example [here](./configs/basic-config.json).
 
+Here's the parameters tjis Json configuration file supports.
 #### `relaychain`
 
-- `bin`: The path of the [Polkadot relay chain binary](https://github.com/paritytech/polkadot/) used
-  to setup your test network. For example `<path/to/polkadot>/target/release/polkadot`.
-- `image`: The path of Docker image containing the relay chain's binarie.
+- `source`: The path of the [Polkadot relay chain executable](https://github.com/paritytech/polkadot/) used
+  to setup your relay chain. For example `<path/to/polkadot>/target/release/polkadot`. It can also be the 
+  name of a Docker image that is used to launch a containerized relaychain node. At the time we write these
+  lines, the Docker image that must be used is [`parity/polkadot:v0.9.11`](https://hub.docker.com/layers/parity/polkadot/v0.9.11/images/sha256-53dde6e976de8c47f9b607cdbf42c5b67b16a49bcc31f1ebd91778d0e1eedd78?context=explore).
 - `chain`: The chain you want to use to generate your spec (probably `rococo-local`).
 - `nodes`: An array of nodes that will be validators on the relay chain.
   - `name`: Must be one of `alice`, `bob`, `charlie`, or `dave`.
@@ -99,18 +72,22 @@ An example of `genesis` is:
 All `genesis` properties can be found in the chainspec output:
 
 ```bash
-./polkadot build-spec --chain=rococo-local --disable-default-bootnode
+docker container run --rm -it ./polkadot build-spec --chain=rococo-local --disable-default-bootnode
 ```
 
 #### `parachains`
 
 `parachains` is an array of objects that consists of:
 
-- `bin`: The path of the [collator node
+- `source`: The path of the [collator node
   binary](https://github.com/substrate-developer-hub/substrate-parachain-template) used to create
   blocks for your parachain. For example
-  `<path/to/substrate-parachain-template>/target/release/polkadot-collator`.
-- `id`: The id to assign to this parachain. Must be unique.
+  `<path/to/substrate-parachain-template>/target/release/polkadot-collator`. It can also be the name
+  of a Docker image, much like for `relaychain`. For now, the Centrifuge Chain's Docker image that is supported 
+  is [`centrifugeio/centrifuge-chain:uniques-latest`](https://hub.docker.com/layers/centrifugeio/centrifuge-chain/uniques-latest/images/sha256-0591410290217fb8ff1615d0d4cf70afc9047c52649b703e7adf2c59c73499e4?context=explore).
+
+- `id`: (optional) The id to assign to this parachain. Must be unique. If not given, it is infered from the
+parachain spec file automatically.
 - `wsPort`: The websocket port for this node.
 - `port`: The TCP port for this node.
 - `balance`: (Optional) Configure a starting amount of balance on the relay chain for this chain's
