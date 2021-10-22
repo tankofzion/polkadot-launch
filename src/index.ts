@@ -1,4 +1,4 @@
-export * from "./check";
+export * from "./config";
 export * from "./parachain";
 export * from "./rpc";
 export * from "./runner";

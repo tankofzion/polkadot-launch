@@ -1,5 +1,39 @@
+import { ChildProcessWithoutNullStreams as ChildProcess } from 'child_process';
+import { XOR } from 'ts-xor'
+
+// Relay or para chain executable source.
+//
+// A chain can be launched from a binary executable file (such as, for
+// instance, 'polkadot --chain=... --wasm-execution=...'), inside a 
+// Docker container or compiled from source, given a Git repository
+// URL with the branch on which source code can be found.
+// This ChainSource type is a so called "discriminated union" with
+// exhaustiveness checking (yet another Typescript crap).
+export type ChainSource = BinaryFile | DockerImage | GitRepository;
+export type BinaryFile = { variant: "binaryFile", path: string };
+export type DockerImage = { variant: "dockerImage", image: string, container?: string };
+export type GitRepository = { variant: "gitRepo", url: string };
+
+export interface SpawnedProcessBase {
+    time: any;
+    user: any;
+    pid: any;
+}
+
+export interface ChildSpawnedProcess extends SpawnedProcessBase {
+    variant: "childProcess";
+    process: ChildProcess;
+}
+
+export interface ContainerSpawnedProcess extends SpawnedProcessBase {
+    variant: "containerProcess";
+}
+
+export type SpawnedProcess = ChildSpawnedProcess | ContainerSpawnedProcess;
+
 export interface LaunchConfig {
-	relaychain: RelayChainConfig;
+    buildsDir?: string;
+	relaychain: RelaychainConfig;
 	parachains: ParachainConfig[];
 	simpleParachains: SimpleParachainConfig[];
 	hrmpChannels: HrmpChannelsConfig[];
@@ -15,14 +49,21 @@ export interface ParachainNodeConfig {
 	flags: string[];
 }
 export interface ParachainConfig {
-	bin: string;
+	source: ChainSource;
 	id?: string;
 	balance: string;
 	chain?: string;
 	nodes: ParachainNodeConfig[];
 }
+export interface GenesisParachain {
+	isSimple: boolean;
+	id?: string;
+	resolvedId: string;
+	chain?: string;
+	source: ChainSource;
+}
 export interface SimpleParachainConfig {
-	bin: string;
+	source: ChainSource;
 	id: string;
 	port: string;
 	balance: string;
@@ -33,16 +74,19 @@ export interface HrmpChannelsConfig {
 	maxCapacity: number;
 	maxMessageSize: number;
 }
-export interface RelayChainConfig {
-	bin: string;
+
+export interface ChainNode {
+    name: string;
+    basePath?: string;
+    wsPort: number;
+    port: number;
+    flags?: string[];
+}
+export interface RelaychainConfig {
+	source: ChainSource;
 	chain: string;
-	nodes: {
-		name: string;
-		basePath?: string;
-		wsPort: number;
-		port: number;
-		flags?: string[];
-	}[];
+    spec?: string;
+	nodes: ChainNode[];
 	genesis?: JSON;
 }
 
@@ -71,9 +115,11 @@ export interface ChainSpec {
 export interface ResolvedParachainConfig extends ParachainConfig {
 	resolvedId: string;
 }
+
 export interface ResolvedSimpleParachainConfig extends SimpleParachainConfig {
 	resolvedId: string;
 }
+
 export interface ResolvedLaunchConfig extends LaunchConfig {
 	parachains: ResolvedParachainConfig[];
 	simpleParachains: ResolvedSimpleParachainConfig[];

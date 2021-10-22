@@ -5,24 +5,31 @@ import { resolve, dirname } from "path";
 import fs from "fs";
 import { LaunchConfig } from "./types";
 import { run } from "./runner";
+import { showErrorMessageAndExit } from "./utils";
+import { 
+    ERROR_MISSING_CONFIG_FILE_ARG, 
+    ERROR_NON_EXISTENT_CONFIG_FILE 
+} from "./messages";
 
 // Special care is needed to handle paths to various files (binaries, spec, config, etc...)
 // The user passes the path to `config.json`, and we use that as the starting point for any other
 // relative path. So the `config.json` file is what we will be our starting point.
 const { argv } = require("yargs");
 
-const config_file = argv._[0] ? argv._[0] : null;
-if (!config_file) {
-	console.error("Missing config file argument...");
-	process.exit();
+const configFileName = argv._[0] ? argv._[0] : null;
+if (!configFileName) {
+    showErrorMessageAndExit(ERROR_MISSING_CONFIG_FILE_ARG);
 }
-let config_path = resolve(process.cwd(), config_file);
-let config_dir = dirname(config_path);
-if (!fs.existsSync(config_path)) {
-	console.error("Config file does not exist: ", config_path);
-	process.exit();
+
+// Check if the given config file path is valid
+let configFilePath = resolve(process.cwd(), configFileName);
+let configFileDir = dirname(configFilePath);
+if (!fs.existsSync(configFilePath)) {
+	showErrorMessageAndExit(ERROR_NON_EXISTENT_CONFIG_FILE, configFilePath);
 }
-let config: LaunchConfig = require(config_path);
+
+// Parse Json config file contents
+let inputConfig: LaunchConfig = require(configFilePath);
 
 // Kill all processes when exiting.
 process.on("exit", function () {
@@ -34,4 +41,4 @@ process.on("SIGINT", function () {
 	process.exit(2);
 });
 
-run(config_dir, config);
+run(configFileDir, inputConfig);

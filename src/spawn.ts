@@ -5,91 +5,173 @@ import {
 } from "child_process";
 import util from "util";
 import fs from "fs";
+import { resolve as resolveFilepath } from "path";
+import { ChainSource, DockerImage, ResolvedParachainConfig, SpawnedProcess } from "./types";
+import { assertExhaustiveSwitch, notImplemented } from "./runner";
+import { generateUniqeName } from "./utils";
+import { executeInContainer } from "./docker";
 
 // This tracks all the processes that we spawn from this file.
 // Used to clean up processes when exiting this program.
-const p: { [key: string]: ChildProcessWithoutNullStreams } = {};
+const listOfRunningProcesses: { [key: string]: ChildProcessWithoutNullStreams } = {};
+
+// List of all currently alive Docker containers or child processes 
+const listOfRunningComponents: { [key: string]: SpawnedProcess } = {};
 
 const execFile = util.promisify(ex);
 
-// Output the chainspec of a node.
-export async function generateChainSpec(bin: string, chain: string) {
-	return new Promise<void>(function (resolve, reject) {
-		let args = ["build-spec", "--chain=" + chain, "--disable-default-bootnode"];
+// Generate the chain specification for a given parachain node.
+export async function generateChainSpec(chainSource: ChainSource, chainName: string, buildsDir: string = "./builds") {
+	
+    return new Promise<void>(function (resolve, reject) {
 
-		p["spec"] = spawn(bin, args);
-		let spec = fs.createWriteStream(`${chain}.json`);
+        let args = ["build-spec", "--chain=" + chainName, "--disable-default-bootnode"];
+        let outputSpecFilepath = resolveFilepath(buildsDir, `${chainName}-spec.json`);
 
-		// `pipe` since it deals with flushing and  we need to guarantee that the data is flushed
-		// before we resolve the promise.
-		p["spec"].stdout.pipe(spec);
+        console.log(" Generate spec file [%s] for chain [%s].", outputSpecFilepath, chainName );
 
-		p["spec"].stderr.pipe(process.stderr);
+        switch (chainSource.variant) {
+            case "binaryFile":
+                
+                listOfRunningProcesses["generateChainSpec"] = spawn(chainSource.path, args);
 
-		p["spec"].on("close", () => {
-			resolve();
-		});
+                let spec = fs.createWriteStream(outputSpecFilepath);
+                
+                // `pipe` since it deals with flushing and  we need to guarantee that the data is flushed
+                // before we resolve the promise.
+                listOfRunningProcesses["generateChainSpec"].stdout.pipe(spec);
 
-		p["spec"].on("error", (err) => {
-			reject(err);
-		});
+                listOfRunningProcesses["generateChainSpec"].stderr.pipe(process.stderr);
+
+                listOfRunningProcesses["generateChainSpec"].on("close", () => {
+                    resolve();
+                });
+
+                listOfRunningProcesses["generateChainSpec"].on("error", (err) => {
+                    reject(err);
+                });
+ 
+                break;
+
+            case "dockerImage":
+                let containerName = chainSource.container ? chainSource.container : generateUniqeName();
+                let command = "polkadot";
+
+                // TODO
+                //executeInContainer(chainSource.image, containerName, command);
+
+                break;
+
+            case "gitRepo":
+                notImplemented("Generating chain spec from a Git repo is not yet implemented");
+                break;
+
+            default:
+                assertExhaustiveSwitch(chainSource);
+                break;
+        }
 	});
 }
 
 // Output the chainspec of a node using `--raw` from a JSON file.
 export async function generateChainSpecRaw(bin: string, chain: string) {
 	console.log(); // Add a newline in output
-	return new Promise<void>(function (resolve, reject) {
+	
+    return new Promise<void>(function (resolve, reject) {
 		let args = ["build-spec", "--chain=" + chain + ".json", "--raw"];
 
-		p["spec"] = spawn(bin, args);
+		listOfRunningProcesses["spec"] = spawn(bin, args);
 		let spec = fs.createWriteStream(`${chain}-raw.json`);
 
 		// `pipe` since it deals with flushing and  we need to guarantee that the data is flushed
 		// before we resolve the promise.
-		p["spec"].stdout.pipe(spec);
-		p["spec"].stderr.pipe(process.stderr);
+		listOfRunningProcesses["spec"].stdout.pipe(spec);
+		listOfRunningProcesses["spec"].stderr.pipe(process.stderr);
 
-		p["spec"].on("close", () => {
+		listOfRunningProcesses["spec"].on("close", () => {
 			resolve();
 		});
 
-		p["spec"].on("error", (err) => {
+		listOfRunningProcesses["spec"].on("error", (err) => {
 			reject(err);
 		});
 	});
 }
 
-export async function getParachainIdFromSpec(
-	bin: string,
-	chain?: string
-): Promise<number> {
+// Resolve a parachain identifier by means of its specification.
+export async function getParachainIdFromSpec(parachain: ResolvedParachainConfig): Promise<number> {
+
 	const data = await new Promise<string>(function (resolve, reject) {
-		let args = ["build-spec"];
-		if (chain) {
-			args.push("--chain=" + chain);
+		
+        let args = ["build-spec"];
+		
+        if (parachain.chain) {
+			args.push("--chain=" + parachain.chain);
 		}
 
 		let data = "";
 
-		p["spec"] = spawn(bin, args);
-		p["spec"].stdout.on("data", (chunk) => {
-			data += chunk;
-		});
+        switch (parachain.source.variant) {
+            case "binaryFile":
 
-		p["spec"].stderr.pipe(process.stderr);
+                listOfRunningProcesses["spec"] = spawn(parachain.source.path, args);
+                listOfRunningProcesses["spec"].stdout.on("data", (chunk) => {
+                    data += chunk;
+                });
+        
+                listOfRunningProcesses["spec"].stderr.pipe(process.stderr);
+        
+                listOfRunningProcesses["spec"].on("close", () => {
+                    resolve(data);
+                });
+        
+                listOfRunningProcesses["spec"].on("error", (err) => {
+                    reject(err);
+                });
+            
+                break;
+    
+            case "dockerImage":
 
-		p["spec"].on("close", () => {
-			resolve(data);
-		});
+                var options = {
+                    Cmd: ['bash', '-c', 'echo test $VAR'],
+                    Env: ['VAR=ttslkfjsdalkfj'],
+                    AttachStdout: true,
+                    AttachStderr: true
+                };
+                
+                executeInContainer(parachain.source.image, "centrifuge_exec", options);
+            
+                break;
 
-		p["spec"].on("error", (err) => {
-			reject(err);
-		});
+                notImplemented("Generating a genesis WASM in a Docker container is not yet supported");
+                break;
+    
+            case "gitRepo":
+                notImplemented("Git repository source for a parachain or relaychain executable is not yet supported");
+                break;
+    
+            default:
+                assertExhaustiveSwitch(parachain.source);
+                break;
+        } 
 	});
 
-	const spec = JSON.parse(data);
-	return spec.para_id;
+    const parachainSpec = JSON.parse(data);
+
+	return parachainSpec.para_id;
+}
+
+// Spawn a new relay chain in a Docker container
+export function startNodeContainer(
+	image: DockerImage,
+	name: string,
+	wsPort: number,
+	port: number,
+	spec: string,
+	flags?: string[],
+	basePath?: string) {
+
 }
 
 // Spawn a new relay chain node.
@@ -123,61 +205,110 @@ export function startNode(
 		console.log(`Added ${flags}`);
 	}
 
-	p[name] = spawn(bin, args);
+	listOfRunningProcesses[name] = spawn(bin, args);
 
 	let log = fs.createWriteStream(`${name}.log`);
 
-	p[name].stdout.pipe(log);
-	p[name].stderr.pipe(log);
+	listOfRunningProcesses[name].stdout.pipe(log);
+	listOfRunningProcesses[name].stderr.pipe(log);
 }
 
 // Export the genesis wasm for a parachain and return it as a hex encoded string starting with 0x.
+//
 // Used for registering the parachain on the relay chain.
 export async function exportGenesisWasm(
-	bin: string,
+	source: ChainSource,
 	chain?: string
 ): Promise<string> {
 	let args = ["export-genesis-wasm"];
+
 	if (chain) {
 		args.push("--chain=" + chain);
 	}
 
-	// wasm files are typically large and `exec` requires us to supply the maximum buffer size in
-	// advance. Hopefully, this generous limit will be enough.
-	let opts = { maxBuffer: 10 * 1024 * 1024 };
-	let { stdout, stderr } = await execFile(bin, args, opts);
-	if (stderr) {
-		console.error(stderr);
-	}
-	return stdout.trim();
+    let outputWasm: string = "";
+
+    switch (source.variant) {
+        case "binaryFile":
+	        // wasm files are typically large and `exec` requires us to supply the maximum buffer size in
+            // advance. Hopefully, this generous limit will be enough.
+            let opts = { maxBuffer: 10 * 1024 * 1024 };
+
+            let { stdout, stderr } = await execFile(source.path, args, opts);
+            if (stderr) {
+                console.error(stderr);
+            }
+
+            outputWasm = stdout.trim();
+
+            break;
+
+        case "dockerImage":    
+            notImplemented("Generating a genesis WASM in a Docker container is not yet supported");
+        break;
+
+        case "gitRepo":
+            notImplemented("Git repository source for a parachain or relaychain executable is not yet supported");
+            break;
+
+        default:
+            assertExhaustiveSwitch(source);
+            break;
+    }
+
+	return outputWasm;
 }
 
 /// Export the genesis state aka genesis head.
 export async function exportGenesisState(
-	bin: string,
-	id?: string,
+	source: ChainSource,
+	chainId?: string,
 	chain?: string
 ): Promise<string> {
 	let args = ["export-genesis-state"];
-	if (id) {
-		args.push("--parachain-id=" + id);
+
+	if (chainId) {
+		args.push("--parachain-id=" + chainId);
 	}
 	if (chain) {
 		args.push("--chain=" + chain);
 	}
 
-	// wasm files are typically large and `exec` requires us to supply the maximum buffer size in
-	// advance. Hopefully, this generous limit will be enough.
-	let opts = { maxBuffer: 5 * 1024 * 1024 };
-	let { stdout, stderr } = await execFile(bin, args, opts);
-	if (stderr) {
-		console.error(stderr);
-	}
-	return stdout.trim();
+    let outputState: string = "";
+
+    switch (source.variant) {
+        case "binaryFile":
+	        // wasm files are typically large and `exec` requires us to supply the maximum buffer size in
+            // advance. Hopefully, this generous limit will be enough.
+            let options = { maxBuffer: 10 * 1024 * 1024 };
+
+            let { stdout, stderr } = await execFile(source.path, args, options);
+            if (stderr) {
+                console.error(stderr);
+            }
+
+            outputState = stdout.trim();
+
+            break;
+
+        case "dockerImage":    
+            notImplemented("Generating the genesis state in a Docker container is not yet supported");
+        break;
+
+        case "gitRepo":
+            notImplemented("Git repository source for a parachain or relaychain executable is not yet supported");
+            break;
+
+        default:
+            assertExhaustiveSwitch(source);
+            break;
+    }
+
+    return outputState;
 }
 
 // Start a collator node for a parachain.
-export function startCollator(
+export function startCollatorNode(
 	bin: string,
 	id: string,
 	wsPort: number,
@@ -238,12 +369,12 @@ export function startCollator(
 			console.log(`Added ${flags_collator} to collator`);
 		}
 
-		p[wsPort] = spawn(bin, args);
+		listOfRunningProcesses[wsPort] = spawn(bin, args);
 
 		let log = fs.createWriteStream(`${wsPort}.log`);
 
-		p[wsPort].stdout.pipe(log);
-		p[wsPort].stderr.on("data", function (chunk) {
+		listOfRunningProcesses[wsPort].stdout.pipe(log);
+		listOfRunningProcesses[wsPort].stderr.on("data", function (chunk) {
 			let message = chunk.toString();
 			if (message.includes("Listening for new connections")) {
 				resolve();
@@ -273,12 +404,12 @@ export function startSimpleCollator(
 			console.log(`Added --parachain-id=${id}`);
 		}
 
-		p[port] = spawn(bin, args);
+		listOfRunningProcesses[port] = spawn(bin, args);
 
 		let log = fs.createWriteStream(`${port}.log`);
 
-		p[port].stdout.pipe(log);
-		p[port].stderr.on("data", function (chunk) {
+		listOfRunningProcesses[port].stdout.pipe(log);
+		listOfRunningProcesses[port].stderr.on("data", function (chunk) {
 			let message = chunk.toString();
 			if (message.includes("Listening for new connections")) {
 				resolve();
@@ -302,14 +433,14 @@ export function purgeChain(bin: string, spec: string) {
 	// Avoid prompt to confirm.
 	args.push("-y");
 
-	p["purge"] = spawn(bin, args);
+	listOfRunningProcesses["purge"] = spawn(bin, args);
 
-	p["purge"].stdout.on("data", function (chunk) {
+	listOfRunningProcesses["purge"].stdout.on("data", function (chunk) {
 		let message = chunk.toString();
 		console.log(message);
 	});
 
-	p["purge"].stderr.on("data", function (chunk) {
+	listOfRunningProcesses["purge"].stderr.on("data", function (chunk) {
 		let message = chunk.toString();
 		console.log(message);
 	});
@@ -317,8 +448,10 @@ export function purgeChain(bin: string, spec: string) {
 
 // Kill all processes spawned and tracked by this file.
 export function killAll() {
-	console.log("\nKilling all processes...");
-	for (const key of Object.keys(p)) {
-		p[key].kill();
+	
+    console.log("\nKilling all processes...");
+
+	for (const key of Object.keys(listOfRunningProcesses)) {
+		listOfRunningProcesses[key].kill();
 	}
 }

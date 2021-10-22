@@ -52,6 +52,7 @@ You can see an example [here](config.json).
 
 - `bin`: The path of the [Polkadot relay chain binary](https://github.com/paritytech/polkadot/) used
   to setup your test network. For example `<path/to/polkadot>/target/release/polkadot`.
+- `image`: The path of Docker image containing the relay chain's binarie.
 - `chain`: The chain you want to use to generate your spec (probably `rococo-local`).
 - `nodes`: An array of nodes that will be validators on the relay chain.
   - `name`: Must be one of `alice`, `bob`, `charlie`, or `dave`.
