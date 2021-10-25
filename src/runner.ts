@@ -68,7 +68,7 @@ export async function run(configDir: string, inputConfig: LaunchConfig) {
 
     // Resolve each parachain id if the latter is not given in the config
 	const config = await resolveParachainsId(configDir, inputConfig);
-
+    
     // Generate relay chain specification (if not given in the launch configuration)
     if (!inputConfig.relaychain.spec)
         await generateChainSpec(inputConfig.relaychain.source, inputConfig.relaychain.chain, inputConfig.buildsDir); 
@@ -273,9 +273,9 @@ async function resolveParachainsId(configDir: string, inputConfig: LaunchConfig)
 		} else {
             // Resolve a parachain id using the parachain spec file
 			//const bin = resolve(configDir, (parachain.source as BinaryFile).path);
-			const paraId = await getParachainIdFromSpec(parachain);
-			console.log(`  ✓ Read parachain id for ${(parachain.source as BinaryFile).path}: ${paraId}`);
-			parachain.resolvedId = paraId.toString();
+			const parachainId = await getParachainIdFromSpec(parachain);
+			console.log(`  ✓ Read parachain id for ${(parachain.source as BinaryFile).path}: ${parachainId}`);
+			parachain.resolvedId = parachainId.toString();
 		}
 	}
 

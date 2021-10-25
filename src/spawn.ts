@@ -9,7 +9,9 @@ import { resolve as resolveFilepath } from "path";
 import { ChainSource, DockerImage, ResolvedParachainConfig, SpawnedProcess } from "./types";
 import { assertExhaustiveSwitch, notImplemented } from "./runner";
 import { generateUniqeName } from "./utils";
-import { executeInContainer } from "./docker";
+import { DockerController} from "./docker";
+import * as Constants from "./constants";
+import stream from "stream";
 
 // This tracks all the processes that we spawn from this file.
 // Used to clean up processes when exiting this program.
@@ -101,28 +103,29 @@ export async function generateChainSpecRaw(bin: string, chain: string) {
 // Resolve a parachain identifier by means of its specification.
 export async function getParachainIdFromSpec(parachain: ResolvedParachainConfig): Promise<number> {
 
-	const data = await new Promise<string>(function (resolve, reject) {
+    // Promise returning a string containing the JSON-encoded parachain spec
+	const spec = await new Promise<string>( (resolve, reject) => {
 		
-        let args = ["build-spec"];
+        let command = [Constants.PARACHAIN_CMD, "build-spec"];
 		
         if (parachain.chain) {
-			args.push("--chain=" + parachain.chain);
+			command.push("--chain=" + parachain.chain);
 		}
 
-		let data = "";
+		let outBuffer = "";
 
         switch (parachain.source.variant) {
             case "binaryFile":
 
-                listOfRunningProcesses["spec"] = spawn(parachain.source.path, args);
+                listOfRunningProcesses["spec"] = spawn(parachain.source.path, command);
                 listOfRunningProcesses["spec"].stdout.on("data", (chunk) => {
-                    data += chunk;
+                    outBuffer += chunk;
                 });
         
                 listOfRunningProcesses["spec"].stderr.pipe(process.stderr);
         
                 listOfRunningProcesses["spec"].on("close", () => {
-                    resolve(data);
+                    resolve(outBuffer);
                 });
         
                 listOfRunningProcesses["spec"].on("error", (err) => {
@@ -132,21 +135,47 @@ export async function getParachainIdFromSpec(parachain: ResolvedParachainConfig)
                 break;
     
             case "dockerImage":
-
-                var options = {
-                    Cmd: ['bash', '-c', 'echo test $VAR'],
-                    Env: ['VAR=ttslkfjsdalkfj'],
-                    AttachStdout: true,
-                    AttachStderr: true
-                };
                 
-                executeInContainer(parachain.source.image, "centrifuge_exec", options);
-            
+                var stdout = new stream.PassThrough();
+                //var stderr = new stream.PassThrough();
+                              
+                stdout.on('data', (chunk) => {
+                    outBuffer += chunk;
+                });
+              
+                //stderr.pipe(process.stderr);
+                
+                DockerController.run(
+                    parachain.source.image,
+                    command,
+                    [stdout,process.stderr],
+                    {
+                        name: Constants.SHELL_DOCKER_CONTAINER_NAME,
+                        HostConfig: {
+                            // Remove this ephemereal shell container when command is executed
+                            AutoRemove: true,
+                        },
+                        AttachedStdout: true,
+                        AttachedStderr: true,
+                        Tty: false
+                    },
+                    {}
+                )
+                .then( (data) => {
+                    // var output = data[0]
+                    // var container = data[1];
+                    // console.log(output.StatusCode);
+                    resolve(outBuffer);
+                })
+                // .then( (data) => {
+                //     console.log("Container %s is removed", Constants.SHELL_DOCKER_CONTAINER_NAME);
+                // })
+                .catch( (error) => {
+                    reject(error);
+                })      
+                        
                 break;
 
-                notImplemented("Generating a genesis WASM in a Docker container is not yet supported");
-                break;
-    
             case "gitRepo":
                 notImplemented("Git repository source for a parachain or relaychain executable is not yet supported");
                 break;
@@ -157,9 +186,9 @@ export async function getParachainIdFromSpec(parachain: ResolvedParachainConfig)
         } 
 	});
 
-    const parachainSpec = JSON.parse(data);
+    const parachainSpec = JSON.parse(spec);
 
-	return parachainSpec.para_id;
+	return parachainSpec.genesis.runtime.parachainInfo.parachainId;
 }
 
 // Spawn a new relay chain in a Docker container

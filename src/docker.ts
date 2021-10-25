@@ -1,6 +1,11 @@
-import Dockerode, { ContainerInfo, ExecCreateOptions } from "dockerode";
+// See https://gist.github.com/kadamwhite/01b15fc34c118d6c5e1f89ede3448af5
+// See https://vsupalov.com/docker-compose-stop-slow/
+
+
+import Dockerode, { ContainerInfo, ContainerInspectInfo, ExecCreateOptions } from "dockerode";
 import fs from "fs";
-import { ContainerSpawnedProcess, SpawnedProcess } from "./types";
+import { ContainerProcess, SpawnedProcess } from "./types";
+import { generateUniqeName } from "./utils";
 
 const dockerSocket = process.env.DOCKER_SOCKET || '/var/run/docker.sock';
 const dockerSocketStats = fs.statSync(dockerSocket);
@@ -10,28 +15,25 @@ if (!dockerSocketStats.isSocket()) {
 }
 
 // Connect to local Docker API server 
-const DockerClient: Dockerode = new Dockerode({
+export const DockerController: Dockerode = new Dockerode({
     socketPath: dockerSocket
 });
 
 export async function listAllContainers() {
 
-    DockerClient.listContainers({ all: true }, function (err, containers) {
-        console.log('Total number of containers: ' + containers?.length);
-
-        containers?.forEach( function (container) {
+    DockerController.listContainers({ all: true }).then( (containers) => {
+        containers.forEach( (container) => {
             console.log(`Container ${container.Names} - current status ${container.Status} - based on image ${container.Image}`);
         })
-    });
+    })
 }
-
 
 export async function pullImage(tag: string) {
 
     console.log( "Pulling Docker image %s", tag);
 
     try {
-        await DockerClient.pull(tag, {});
+        await DockerController.pull(tag, {});
         return true;
     } catch(error) {
         console.log( "Cannot pull Docker image [%s]", tag);
@@ -41,7 +43,7 @@ export async function pullImage(tag: string) {
 
 export async function startContainer(): Promise<SpawnedProcess> {
 
-    let process: ContainerSpawnedProcess = {
+    let process: ContainerProcess = {
         variant: "containerProcess",
         time: undefined,
         user: undefined,
@@ -51,90 +53,55 @@ export async function startContainer(): Promise<SpawnedProcess> {
     return process;
 }
 
-export async function isExistingContainer(containerName: string): Promise<ContainerInfo> {
+// See https://www.tabnine.com/code/javascript/functions/dockerode/Dockerode/getContainer
+// See https://www.tabnine.com/code/javascript/functions/dockerode/Container/inspect
+// See https://stackoverflow.com/questions/60106857/run-docker-container-in-detach-mode-with-dockerode
 
-    let containerInfo = {}};
+// FindContainer.inspect(err => {
+//     if (!_.isNull(this.logStream)) {
+//       this.logStream.unwatch();
+//       this.logStream = null;
+//     }
 
-    DockerClient.listContainers({ all: true })
-        .then( (containers) => {
-            containers.forEach( (container) => {
-                console.log("container name: ${container.Names")
-            })
-            
-            console.log("listContainers promise succeeded")
+//     if (!err) {
+//       this.container.remove(next);
+//     } else if (err && _.startsWith(err.reason, 'no such container')) { // no such container
+//       this.server.log.debug({ container_id: container }, 'Attempting to remove a container that does not exist, continuing without error.');
+//       return next();
+//     } else {
+//       return next(err);
+//     }
+//   });
+export async function searchContainerByName(containerName: string): Promise<boolean> {
 
-            return containerInfo;
-        }) 
+    let maybeContainer: Dockerode.Container = DockerController.getContainer(containerName);
+    maybeContainer.inspect()
+        .then( (inspectData) => {
+            return true;
+        })
         .catch( (error) => {
-            console.log("listContainers promise failed")
+            return false;
         })
 
-    return containerInfo;
-
-        /*
-        , function (err, containers) {
-        console.log('Total number of containers: ' + containers?.length);
-
-        containers?.forEach( function (container) {
-            console.log(`Container ${container.Names} - current status ${container.Status} - based on image ${container.Image}`);
-        })
-
-    DockerClient.listContainers()
-    */
+    return false;
 }
 
 // Execute a given command in a ephemereal container
-export async function executeInContainer(imageName: string, containerName: string, execOptions:ExecCreateOptions) {
-    
-    console.log("Create container [%s] with image [%s]", containerName, imageName);
+export async function runInContainer(imageName: string, containerName: string, command: string[]) {
 
-    let createOptions: Dockerode.ContainerCreateOptions = {
-        name: containerName,
-        Image: imageName,
-        AttachStdout: true,
-        AttachStderr: true
-    }
+    if (containerName == "")
+        containerName = generateUniqeName();
 
-//    if (isExistingContainer(containerName))
-
-    DockerClient.createContainer(createOptions)
-        .then( (container) => {
-            console.log(" Container %s created successfully with id: ", containerName, container.id)
-            //container.exec(execOptions)
-        })
-        .catch( (error) => {
-            console.log(" Cannot create container");
-        })
+    DockerController.run(
+        imageName,
+        command,
+        process.stdout,
+        {}
+    )
+    .then( (data) => {
+        console.log("Run data" + JSON.stringify(data));
+    })
+    .catch( (error) => {
+        console.log("Cannot run command 'cat /etc/issue' on 'Alpine' image")
+    })      
 }
-
-//     var options = {
-//       Cmd: ['bash', '-c', 'echo test $VAR'],
-//       Env: ['VAR=ttslkfjsdalkfj'],
-//       AttachStdout: true,
-//       AttachStderr: true
-//     };
-  
-//     container.exec(options, function(err, exec) {
-//       if (err) return;
-//       exec.start(function(err, stream) {
-//         if (err) return;
-  
-//         container.modem.demuxStream(stream, process.stdout, process.stderr);
-  
-//         exec.inspect(function(err, data) {
-//           if (err) return;
-//           console.log(data);
-//         });
-//       });
-//     });
-//   }
-  
-//   docker.createContainer({
-//     Image: 'ubuntu',
-//     Tty: true,
-//     Cmd: ['/bin/bash']
-//   }, function(err, container) {
-//     container.start({}, function(err, data) {
-//       runExec(container);
-//     });
-//   });

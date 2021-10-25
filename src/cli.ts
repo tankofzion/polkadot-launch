@@ -28,15 +28,15 @@ if (!fs.existsSync(configFilePath)) {
 	showErrorMessageAndExit(ERROR_NON_EXISTENT_CONFIG_FILE, configFilePath);
 }
 
-// Parse Json config file contents
+// Parse input config file contents
 let inputConfig: LaunchConfig = require(configFilePath);
 
-// Kill all processes when exiting.
+// Kill all running processes when exiting
 process.on("exit", function () {
 	killAll();
 });
 
-// Handle ctrl+c to trigger `exit`.
+// Handle ctrl+c to trigger `exit`
 process.on("SIGINT", function () {
 	process.exit(2);
 });

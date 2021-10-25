@@ -25,11 +25,11 @@ export interface ChildSpawnedProcess extends SpawnedProcessBase {
     process: ChildProcess;
 }
 
-export interface ContainerSpawnedProcess extends SpawnedProcessBase {
+export interface ContainerProcess extends SpawnedProcessBase {
     variant: "containerProcess";
 }
 
-export type SpawnedProcess = ChildSpawnedProcess | ContainerSpawnedProcess;
+export type SpawnedProcess = ChildProcess | ContainerProcess;
 
 export interface LaunchConfig {
     buildsDir?: string;

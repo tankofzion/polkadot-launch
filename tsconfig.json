@@ -8,7 +8,10 @@
 		"outDir": "dist",
 		"resolveJsonModule": true,
 		"strict": true,
-		"declaration": true
+		"declaration": true,
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+        "sourceMap": true
 	},
-	"exclude": ["node_modules", "dist", "test"]
+	"exclude": ["node_modules", "dist", "test", "generated"]
 }
